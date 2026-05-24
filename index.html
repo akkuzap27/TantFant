@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tant Fant Board Game</title>
+    <style>
+        :root {
+            --bg-color: #f4efe6;
+            --board-color: #e2d4b7;
+            --line-color: #5a4a42;
+            --green-piece: #2ecc71;
+            --green-hover: #27ae60;
+            --yellow-piece: #f1c40f;
+            --yellow-hover: #f39c12;
+            --text-color: #3e2723;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            letter-spacing: 2px;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 450px;
+        }
+
+        .mode-selector, .difficulty-selector {
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.05);
+            padding: 5px;
+            border-radius: 30px;
+        }
+
+        .difficulty-container, .online-container {
+            display: none;
+            animation: fadeIn 0.3s ease forwards;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .difficulty-container.show, .online-container.show {
+            display: flex;
+        }
+
+        .online-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: rgba(0,0,0,0.03);
+            padding: 15px;
+            border-radius: 14px;
+            width: 100%;
+            max-width: 320px;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .online-panel input {
+            padding: 8px 12px;
+            border-radius: 20px;
+            border: 1px solid #ccc;
+            outline: none;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        .online-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .btn {
+            background: none;
+            border: none;
+            padding: 8px 18px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-color);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn.active {
+            background-color: var(--line-color);
+            color: var(--bg-color);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+
+        .diff-btn.active.easy { background-color: #2ecc71; color: white; }
+        .diff-btn.active.hard { background-color: #e74c3c; color: white; }
+        .action-btn { background-color: var(--line-color); color: var(--bg-color); }
+
+        #status {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: rgba(0,0,0,0.05);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .board-container {
+            position: relative;
+            width: 90vw;
+            height: 90vw;
+            max-width: 450px;
+            max-height: 450px;
+            background-color: var(--board-color);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(90, 74, 66, 0.3);
+        }
+
+        .board-lines {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            width: calc(100% - 80px);
+            height: calc(100% - 80px);
+            pointer-events: none;
+        }
+
+        .board-lines line {
+            stroke: var(--line-color);
+            stroke-width: 6;
+            stroke-linecap: round;
+        }
+
+        .nodes-container {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            width: calc(100% - 80px);
+            height: calc(100% - 80px);
+            z-index: 2;
+        }
+
+        .node {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transform: translate(-50%, -50%);
+        }
+
+        .node[data-index="0"] { top: 0%; left: 0%; }
+        .node[data-index="1"] { top: 0%; left: 50%; }
+        .node[data-index="2"] { top: 0%; left: 100%; }
+        .node[data-index="3"] { top: 50%; left: 0%; }
+        .node[data-index="4"] { top: 50%; left: 50%; }
+        .node[data-index="5"] { top: 50%; left: 100%; }
+        .node[data-index="6"] { top: 100%; left: 0%; }
+        .node[data-index="7"] { top: 100%; left: 50%; }
+        .node[data-index="8"] { top: 100%; left: 100%; }
+
+        .node.valid-target::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border: 3px dashed var(--line-color);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        .piece {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2), inset 0 -4px 0 rgba(0,0,0,0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            z-index: 3;
+        }
+
+        .piece.green { background-color: var(--green-piece); border: 3.5px solid #1e824c; }
+        .piece.yellow { background-color: var(--yellow-piece); border: 3.5px solid #d4ac0d; }
+        .piece.selected {
+            transform: scale(1.15);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.4), inset 0 -4px 0 rgba(0,0,0,0.2);
+            animation: float 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        @keyframes float {
+            0% { transform: scale(1.15) translateY(0px); }
+            50% { transform: scale(1.15) translateY(-4px); }
+            100% { transform: scale(1.15) translateY(0px); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal.show { display: flex; opacity: 1; }
+
+        .modal-content {
+            background-color: white;
+            padding: 40px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transform: scale(0.8);
+            transition: transform 0.3s ease;
+        }
+
+        .modal.show .modal-content { transform: scale(1); }
+        .modal h2 { font-size: 2.2rem; margin-bottom: 15px; }
+
+        .reset-btn {
+            background-color: var(--line-color);
+            color: var(--bg-color);
+            border: none;
+            padding: 12px 28px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 15px;
+        }
+        .reset-btn:hover { background-color: #3e2723; }
+
+        .color-choice-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .choice-btn {
+            border: none;
+            padding: 10px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 20px;
+            cursor: pointer;
+            color: white;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+            transition: transform 0.1s ease;
+        }
+        .choice-btn:active { transform: scale(0.95); }
+        .choice-btn.green-choice { background-color: var(--green-piece); }
+        .choice-btn.yellow-choice { background-color: var(--yellow-piece); color: #3e2723; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>TANT FANT</h1>
+    </header>
+
+    <div class="controls-panel">
+        <div class="mode-selector">
+            <button class="btn mode-btn" id="vsCpuBtn" onclick="setGameMode('vsCpu')">vs PC</button>
+            <button class="btn mode-btn active" id="vsLocalBtn" onclick="setGameMode('vsLocal')">2 Players</button>
+            <button class="btn mode-btn" id="vsOnlineBtn" onclick="setGameMode('vsOnline')">Online 🌐</button>
+        </div>
+
+        <div class="difficulty-container" id="diffContainer">
+            <div class="difficulty-selector">
+                <button class="btn diff-btn easy" id="btn-easy" onclick="setDifficulty('easy')">Easy</button>
+                <button class="btn diff-btn hard active" id="btn-hard" onclick="setDifficulty('hard')">Hardcore AI</button>
+            </div>
+        </div>
+
+        <div class="online-container" id="onlineContainer">
+            <div class="online-panel">
+                <input type="text" id="roomNameInput" placeholder="Room Name">
+                <input type="password" id="roomPassInput" placeholder="Password">
+                <div class="online-actions">
+                    <button class="btn action-btn" onclick="handleOnlineAction('createRoom')">Create</button>
+                    <button class="btn action-btn" onclick="handleOnlineAction('joinRoom')">Join</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="status">Green's Turn</div>
+
+    <div class="board-container">
+        <svg class="board-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line x1="0" y1="0" x2="100" y2="0" /><line x1="0" y1="50" x2="100" y2="50" /><line x1="0" y1="100" x2="100" y2="100" />
+            <line x1="0" y1="0" x2="0" y2="100" /><line x1="50" y1="0" x2="50" y2="100" /><line x1="100" y1="0" x2="100" y2="100" />
+            <line x1="0" y1="0" x2="100" y2="100" /><line x1="100" y1="0" x2="0" y2="100" />
+        </svg>
+
+        <div class="nodes-container" id="boardMesh">
+            <div class="node" data-index="0"></div><div class="node" data-index="1"></div><div class="node" data-index="2"></div>
+            <div class="node" data-index="3"></div><div class="node" data-index="4"></div><div class="node" data-index="5"></div>
+            <div class="node" data-index="6"></div><div class="node" data-index="7"></div><div class="node" data-index="8"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="winModal">
+        <div class="modal-content">
+            <h2 id="winMessage">Green Wins!</h2>
+            <button class="reset-btn" id="modalResetBtn" onclick="resetGame()">Play Again</button>
+        </div>
+    </div>
+
+    <div class="modal" id="choiceModal">
+        <div class="modal-content">
+            <h2>Green or Yellow?</h2>
+            <div class="color-choice-container">
+                <button class="choice-btn green-choice" onclick="selectUserColor('green')">Green</button>
+                <button class="choice-btn yellow-choice" onclick="selectUserColor('yellow')">Yellow</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyB6rsC3t2OHJ8B5zzOuPapWCVq7sDPh9Fl_r5rUvR9J4lEHnufB6cdH3sOkj3inicF/exec";
+
+        const adjacencyMap = {
+            0: [1, 3, 4], 1: [0, 2, 4], 2: [1, 4, 5],
+            3: [0, 4, 6], 4: [0, 1, 2, 3, 5, 6, 7, 8], 5: [2, 4, 8],
+            6: [3, 4, 7], 7: [6, 4, 8], 8: [7, 4, 5]
+        };
+
+        const winLines = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],
+            [0, 4, 8], [2, 4, 6]
+        ];
+
+        let gameState = Array(9).fill(null); 
+        let currentTurn = 'green'; 
+        let gameMode = 'vsLocal'; 
+        let aiDifficulty = 'hard'; 
+        let selectedNodeIndex = null;
+        let isAiThinking = false;
+        let humanPlayerColor = 'green';
+
+        // Online Infrastructure Flags
+        let playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+        let currentRoomName = null;
+        let currentRoomPass = null;
+        let myOnlineRole = null; 
+        let pollInterval = null;
+        let p2Joined = false;
+
+        const nodeElements = document.querySelectorAll('.node');
+        const statusDisplay = document.getElementById('status');
+        const winModal = document.getElementById('winModal');
+        const winMessage = document.getElementById('winMessage');
+        const diffContainer = document.getElementById('diffContainer');
+        const onlineContainer = document.getElementById('onlineContainer');
+        const choiceModal = document.getElementById('choiceModal');
+
+        function setGameMode(mode) {
+            if (isAiThinking) return;
+            cleanOnlinePolling();
+            gameMode = mode;
+            
+            document.getElementById('vsCpuBtn').classList.toggle('active', mode === 'vsCpu');
+            document.getElementById('vsLocalBtn').classList.toggle('active', mode === 'vsLocal');
+            document.getElementById('vsOnlineBtn').classList.toggle('active', mode === 'vsOnline');
+            
+            diffContainer.classList.toggle('show', mode === 'vsCpu');
+            onlineContainer.classList.toggle('show', mode === 'vsOnline');
+            
+            document.getElementById('modalResetBtn').style.display = (mode === 'vsOnline') ? 'none' : 'block';
+            initGame();
+        }
+
+        function setDifficulty(level) {
+            if (isAiThinking) return;
+            aiDifficulty = level;
+            document.querySelectorAll('.diff-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${level}`).classList.add('active');
+            initGame();
+        }
+
+        function initGame() {
+            gameState = Array(9).fill(null);
+            gameState[0] = 'yellow'; gameState[1] = 'yellow'; gameState[2] = 'yellow'; 
+            gameState[6] = 'green'; gameState[7] = 'green'; gameState[8] = 'green'; 
+            currentTurn = 'green';
+            selectedNodeIndex = null;
+            isAiThinking = false;
+            
+            if (gameMode === 'vsOnline') {
+                statusDisplay.textContent = "Create or Join a Room to Start!";
+                statusDisplay.style.color = "var(--text-color)";
+                renderBoard();
+            } else if (gameMode === 'vsCpu') {
+                choiceModal.classList.add('show');
+            } else {
+                updateStatusUI();
+                renderBoard();
+            }
+        }
+
+        function selectUserColor(color) {
+            humanPlayerColor = color;
+            choiceModal.classList.remove('show');
+            updateStatusUI();
+            renderBoard();
+            if (humanPlayerColor === 'yellow') {
+                isAiThinking = true;
+                setTimeout(makeCpuMove, 600);
+            }
+        }
+
+        function resetGame() {
+            winModal.classList.remove('show');
+            initGame();
+        }
+
+        function renderBoard() {
+            nodeElements.forEach((node, index) => {
+                node.innerHTML = '';
+                node.classList.remove('valid-target');
+                const pieceColor = gameState[index];
+                if (pieceColor) {
+                    const piece = document.createElement('div');
+                    piece.classList.add('piece', pieceColor);
+                    if (index === selectedNodeIndex) piece.classList.add('selected');
+                    node.appendChild(piece);
+                }
+            });
+        }
+
+        function updateStatusUI() {
+            if (gameMode === 'vsOnline') {
+                if (!p2Joined) {
+                    statusDisplay.textContent = "Waiting for Player 2 to join...";
+                    statusDisplay.style.color = "var(--text-color)";
+                } else {
+                    if (currentTurn === myOnlineRole) {
+                        statusDisplay.textContent = `Your Turn (${myOnlineRole.toUpperCase()})`;
+                    } else {
+                        statusDisplay.textContent = "Waiting for Opponent move...";
+                    }
+                    statusDisplay.style.color = currentTurn === 'green' ? 'var(--green-hover)' : 'var(--yellow-hover)';
+                }
+                return;
+            }
+
+            if (gameMode === 'vsCpu' && currentTurn !== humanPlayerColor) {
+                statusDisplay.textContent = "Computer is calculating paths...";
+            } else {
+                statusDisplay.textContent = `${currentTurn.charAt(0).toUpperCase() + currentTurn.slice(1)}'s Turn`;
+            }
+            statusDisplay.style.color = currentTurn === 'green' ? 'var(--green-hover)' : 'var(--yellow-hover)';
+        }
+
+        function highlightValidMoves() {
+            nodeElements.forEach(node => node.classList.remove('valid-target'));
+            if (selectedNodeIndex !== null) {
+                const possibleMoves = adjacencyMap[selectedNodeIndex];
+                possibleMoves.forEach(index => {
+                    if (gameState[index] === null) {
+                        nodeElements[index].classList.add('valid-target');
+                    }
+                });
+            }
+        }
+
+        nodeElements.forEach(node => {
+            node.addEventListener('click', () => {
+                if (gameMode === 'vsCpu' && currentTurn !== humanPlayerColor || isAiThinking) return;
+                if (gameMode === 'vsOnline' && (currentTurn !== myOnlineRole || !p2Joined)) return;
+
+                const clickedIndex = parseInt(node.getAttribute('data-index'));
+                const occupant = gameState[clickedIndex];
+
+                if (occupant === currentTurn) {
+                    selectedNodeIndex = (selectedNodeIndex === clickedIndex) ? null : clickedIndex;
+                    highlightValidMoves();
+                    renderBoard();
+                } 
+                else if (selectedNodeIndex !== null && occupant === null) {
+                    if (adjacencyMap[selectedNodeIndex].includes(clickedIndex)) {
+                        makeMove(selectedNodeIndex, clickedIndex);
+                    }
+                }
+            });
+        });
+
+        function makeMove(fromIndex, toIndex) {
+            gameState[toIndex] = currentTurn;
+            gameState[fromIndex] = null;
+            selectedNodeIndex = null;
+            renderBoard();
+            
+            if (checkWin(gameState, currentTurn)) {
+                handleEndGame(currentTurn);
+                if (gameMode === 'vsOnline') pushOnlineState();
+            } else {
+                currentTurn = currentTurn === 'green' ? 'yellow' : 'green';
+                updateStatusUI();
+                
+                if (gameMode === 'vsCpu' && currentTurn !== humanPlayerColor) {
+                    isAiThinking = true;
+                    setTimeout(makeCpuMove, 600); 
+                }

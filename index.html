@@ -603,35 +603,74 @@
             let selectedMove = null;
 
             if (aiDifficulty === 'hard') {
+                // --- UNBEATABLE MINIMAX ENGINE ---
+                let bestScore = -Infinity;
+                let movesWithScores = [];
+
                 for (const move of legalMoves) {
                     const tempBoard = [...gameState];
                     tempBoard[move.to] = cpuColor;
                     tempBoard[move.from] = null;
-                    if (checkWin(tempBoard, cpuColor)) {
+                    
+                    // Evaluate this entire move branch recursively (Up to 8 plies deep to guarantee perfect endgame play)
+                    let score = minimax(tempBoard, 0, false, cpuColor, humanPlayerColor);
+                    
+                    if (score > bestScore) {
+                        bestScore = score;
                         selectedMove = move;
-                        break;
                     }
                 }
-
-                if (!selectedMove) {
-                    for (const move of legalMoves) {
-                        const tempBoard = [...gameState];
-                        tempBoard[move.to] = humanPlayerColor;
-                        tempBoard[move.from] = null;
-                        if (checkWin(tempBoard, humanPlayerColor)) {
-                            selectedMove = move;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!selectedMove) {
+            } else {
+                // Easy Mode: Pick a random move
                 selectedMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
             }
 
             isAiThinking = false;
             makeMove(selectedMove.from, selectedMove.to);
+        }
+
+        // Recursive Minimax implementation for zero-sum perfect play
+        function minimax(board, depth, isMaximizing, cpuColor, humanColor) {
+            if (checkWin(board, cpuColor)) return 10 - depth;
+            if (checkWin(board, humanColor)) return depth - 10;
+            if (depth >= 7) return 0; // Cutoff evaluation safety anchor
+
+            const activeColor = isMaximizing ? cpuColor : humanColor;
+            const availableMoves = [];
+
+            board.forEach((occupant, index) => {
+                if (occupant === activeColor) {
+                    adjacencyMap[index].forEach(target => {
+                        if (board[target] === null) {
+                            availableMoves.push({ from: index, to: target });
+                        }
+                    });
+                }
+            });
+
+            if (availableMoves.length === 0) return 0;
+
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (const move of availableMoves) {
+                    const nextBoard = [...board];
+                    nextBoard[move.to] = cpuColor;
+                    nextBoard[move.from] = null;
+                    let evaluation = minimax(nextBoard, depth + 1, false, cpuColor, humanColor);
+                    maxEval = Math.max(maxEval, evaluation);
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                for (const move of availableMoves) {
+                    const nextBoard = [...board];
+                    nextBoard[move.to] = humanColor;
+                    nextBoard[move.from] = null;
+                    let evaluation = minimax(nextBoard, depth + 1, true, cpuColor, humanColor);
+                    minEval = Math.min(minEval, evaluation);
+                }
+                return minEval;
+            }
         }
 
         // --- Database Communication Pipeline Engines ---

@@ -554,4 +554,187 @@
                 if (gameMode === 'vsCpu' && currentTurn !== humanPlayerColor) {
                     isAiThinking = true;
                     setTimeout(makeCpuMove, 600); 
+                } else if (gameMode === 'vsOnline') {
+                    pushOnlineState();
                 }
+            }
+        }
+
+        function checkWin(board, player) {
+            return winLines.some(line => {
+                const completesLine = line.every(index => board[index] === player);
+                if (completesLine) {
+                    if (player === 'yellow' && line.every(i => i < 3)) return false; 
+                    if (player === 'green' && line.every(i => i > 5)) return false;
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        function handleEndGame(winner) {
+            winMessage.textContent = `${winner.charAt(0).toUpperCase() + winner.slice(1)} Wins!`;
+            winModal.classList.add('show');
+        }
+
+        function makeCpuMove() {
+            if (!isAiThinking) return;
+            
+            const cpuColor = humanPlayerColor === 'green' ? 'yellow' : 'green';
+            const legalMoves = [];
+            
+            gameState.forEach((occupant, index) => {
+                if (occupant === cpuColor) {
+                    adjacencyMap[index].forEach(target => {
+                        if (gameState[target] === null) {
+                            legalMoves.push({ from: index, to: target });
+                        }
+                    });
+                }
+            });
+
+            if (legalMoves.length === 0) {
+                isAiThinking = false;
+                currentTurn = humanPlayerColor;
+                updateStatusUI();
+                return;
+            }
+
+            let selectedMove = null;
+
+            if (aiDifficulty === 'hard') {
+                for (const move of legalMoves) {
+                    const tempBoard = [...gameState];
+                    tempBoard[move.to] = cpuColor;
+                    tempBoard[move.from] = null;
+                    if (checkWin(tempBoard, cpuColor)) {
+                        selectedMove = move;
+                        break;
+                    }
+                }
+
+                if (!selectedMove) {
+                    for (const move of legalMoves) {
+                        const tempBoard = [...gameState];
+                        tempBoard[move.to] = humanPlayerColor;
+                        tempBoard[move.from] = null;
+                        if (checkWin(tempBoard, humanPlayerColor)) {
+                            selectedMove = move;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!selectedMove) {
+                selectedMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+            }
+
+            isAiThinking = false;
+            makeMove(selectedMove.from, selectedMove.to);
+        }
+
+        // --- Database Communication Pipeline Engines ---
+        function handleOnlineAction(action) {
+            const roomName = document.getElementById('roomNameInput').value.trim();
+            const roomPass = document.getElementById('roomPassInput').value.trim();
+            
+            if (!roomName || !roomPass) {
+                alert("Please enter both Room Name and Password.");
+                return;
+            }
+
+            statusDisplay.textContent = "Connecting to database sheet...";
+            
+            gameState = Array(9).fill(null);
+            gameState[0] = 'yellow'; gameState[1] = 'yellow'; gameState[2] = 'yellow'; 
+            gameState[6] = 'green'; gameState[7] = 'green'; gameState[8] = 'green';
+            renderBoard();
+            
+            fetch(SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors", 
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, roomName, password: roomPass, playerId })
+            })
+            .then(() => {
+                currentRoomName = roomName;
+                currentRoomPass = roomPass;
+                myOnlineRole = (action === 'createRoom') ? 'green' : 'yellow';
+                p2Joined = (action === 'joinRoom');
+                
+                updateStatusUI();
+                cleanOnlinePolling();
+                pollInterval = setInterval(syncWithOnlineDatabase, 1500); 
+            })
+            .catch(err => {
+                alert("Database Connection Error!");
+                initGame();
+            });
+        }
+
+        function cleanOnlinePolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            currentRoomName = null;
+            currentRoomPass = null;
+            myOnlineRole = null;
+            p2Joined = false;
+        }
+
+        function pushOnlineState() {
+            if (!currentRoomName) return;
+            const payload = {
+                action: "updateBoard",
+                roomName: currentRoomName,
+                password: currentRoomPass,
+                gameState: JSON.stringify(gameState),
+                currentTurn: currentTurn
+            };
+            fetch(SCRIPT_URL, {
+                method: "POST",
+                mode: "no-cors",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        function syncWithOnlineDatabase() {
+            if (!currentRoomName) return;
+            
+            fetch(`${SCRIPT_URL}?action=getRoom&roomName=${encodeURIComponent(currentRoomName)}&password=${encodeURIComponent(currentRoomPass)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) return;
+                
+                if (!p2Joined && data.playerYellow) {
+                    p2Joined = true;
+                    updateStatusUI();
+                }
+
+                if (data.gameState) {
+                    const incomingState = JSON.parse(data.gameState);
+                    if (JSON.stringify(incomingState) !== JSON.stringify(gameState)) {
+                        gameState = incomingState;
+                        renderBoard();
+                    }
+                }
+
+                if (data.currentTurn && data.currentTurn !== currentTurn) {
+                    currentTurn = data.currentTurn;
+                    updateStatusUI();
+                }
+
+                if (checkWin(gameState, 'green')) handleEndGame('green');
+                if (checkWin(gameState, 'yellow')) handleEndGame('yellow');
+            });
+        }
+
+        window.onload = () => {
+            initGame();
+        };
+    </script>
+</body>
+</html>

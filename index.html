@@ -349,16 +349,13 @@
                 <span id="toggleArrow">▾</span>
             </div>
             <div class="online-panel" id="onlinePanel">
-                <div id="peerIdDisplay" style="display:none;flex-direction:column;gap:6px;">
-                    <div style="font-size:0.78rem;color:#888;text-align:center;">Your Peer ID — share this with your friend</div>
-                    <div style="display:flex;gap:6px;align-items:center;">
-                        <input type="text" id="myPeerIdBox" readonly style="flex:1;cursor:text;" placeholder="Generating...">
-                        <button class="btn action-btn" onclick="copyPeerId()" title="Copy ID" style="padding:8px 10px;font-size:1rem;">📋</button>
-                    </div>
-                </div>
-                <input type="text" id="friendPeerIdInput" placeholder="Enter Friend's Peer ID">
+                <div style="font-size:0.78rem;color:#888;text-align:center;">Choose a room code &amp; share it with your friend</div>
+                <input type="text" id="roomCodeInput" placeholder="e.g. TANT007" maxlength="20"
+                    style="text-transform:uppercase;letter-spacing:2px;font-weight:700;"
+                    oninput="this.value=this.value.toUpperCase()">
                 <div class="online-actions">
-                    <button class="btn action-btn" onclick="connectToPeer()">Connect 🔗</button>
+                    <button class="btn action-btn" onclick="createRoom()">Create 🟢</button>
+                    <button class="btn action-btn" onclick="joinRoom()">Join 🟡</button>
                 </div>
                 <div id="connectionStatus" style="font-size:0.78rem;text-align:center;color:#888;min-height:1.2em;"></div>
             </div>
@@ -481,10 +478,9 @@
             isAiThinking = false;
             
             if (gameMode === 'vsOnline') {
-                statusDisplay.textContent = "Initializing peer connection...";
+                statusDisplay.textContent = "Enter a room code to play!";
                 statusDisplay.style.color = "var(--text-color)";
                 renderBoard();
-                initPeer();
             } else if (gameMode === 'vsCpu') {
                 choiceModal.classList.add('show');
             } else {
@@ -765,40 +761,58 @@
             }
         }
 
-        // --- PeerJS Online Multiplayer Engine ---
-        function initPeer() {
+        // --- PeerJS Online Multiplayer Engine (Custom Room Codes) ---
+        function createRoom() {
+            const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+            if (!code) { alert('Please enter a room code.'); return; }
+
+            document.getElementById('connectionStatus').textContent = 'Creating room...';
             if (peer && !peer.destroyed) peer.destroy();
-            peer = new Peer();
+
+            peer = new Peer(code);
+            myOnlineRole = 'green';
 
             peer.on('open', (id) => {
-                const display = document.getElementById('peerIdDisplay');
-                display.style.display = 'flex';
-                document.getElementById('myPeerIdBox').value = id;
-                document.getElementById('connectionStatus').textContent = 'Share your ID with your friend and wait for them to connect.';
-                myOnlineRole = 'green'; // creator is always Green
-                statusDisplay.textContent = "Your ID is ready — waiting for opponent...";
+                document.getElementById('connectionStatus').textContent = `✅ Room "${id}" ready! Waiting for friend...`;
+                statusDisplay.textContent = 'Waiting for opponent to join...';
             });
-
             peer.on('connection', (connection) => {
                 conn = connection;
                 myOnlineRole = 'green';
                 p2Joined = true;
-                setupConnection(true); // true = isCreator
+                setupConnection(true);
             });
-
             peer.on('error', (err) => {
-                document.getElementById('connectionStatus').textContent = '⚠️ Error: ' + err.type;
+                if (err.type === 'unavailable-id') {
+                    document.getElementById('connectionStatus').textContent = '⚠️ Code already taken! Try another.';
+                } else {
+                    document.getElementById('connectionStatus').textContent = '⚠️ Error: ' + err.type;
+                }
             });
         }
 
-        function connectToPeer() {
-            const friendId = document.getElementById('friendPeerIdInput').value.trim();
-            if (!friendId) { alert("Please enter your friend's Peer ID."); return; }
-            if (!peer || peer.destroyed) { alert("Not ready. Please re-select Online mode."); return; }
-            document.getElementById('connectionStatus').textContent = 'Connecting...';
-            conn = peer.connect(friendId, { reliable: true });
-            myOnlineRole = 'yellow'; // joiner is always Yellow
-            setupConnection(false); // false = not creator
+        function joinRoom() {
+            const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+            if (!code) { alert('Please enter the room code.'); return; }
+
+            document.getElementById('connectionStatus').textContent = 'Joining room...';
+            if (peer && !peer.destroyed) peer.destroy();
+
+            peer = new Peer(); // joiner gets auto-ID; connects TO the creator's code
+            myOnlineRole = 'yellow';
+
+            peer.on('open', () => {
+                conn = peer.connect(code, { reliable: true });
+                setupConnection(false);
+                document.getElementById('connectionStatus').textContent = 'Connecting...';
+            });
+            peer.on('error', (err) => {
+                if (err.type === 'peer-unavailable') {
+                    document.getElementById('connectionStatus').textContent = '⚠️ Room not found! Check the code.';
+                } else {
+                    document.getElementById('connectionStatus').textContent = '⚠️ Error: ' + err.type;
+                }
+            });
         }
 
         function setupConnection(isCreator) {
@@ -862,13 +876,7 @@
             });
         }
 
-        function copyPeerId() {
-            const id = document.getElementById('myPeerIdBox').value;
-            if (!id) return;
-            navigator.clipboard.writeText(id)
-                .then(() => { document.getElementById('connectionStatus').textContent = '📋 ID copied! Share it with your friend.'; })
-                .catch(() => { document.getElementById('myPeerIdBox').select(); document.execCommand('copy'); });
-        }
+        function copyPeerId() {} // legacy stub — no longer used
 
         function toggleOnlinePanel() {
             const panel = document.getElementById('onlinePanel');
@@ -884,14 +892,8 @@
             peer = null;
             myOnlineRole = null;
             p2Joined = false;
-            const d = document.getElementById('peerIdDisplay');
-            if (d) d.style.display = 'none';
             const s = document.getElementById('connectionStatus');
             if (s) s.textContent = '';
-            const b = document.getElementById('myPeerIdBox');
-            if (b) b.value = '';
-            const f = document.getElementById('friendPeerIdInput');
-            if (f) f.value = '';
             const badge = document.getElementById('connectedBadge');
             if (badge) badge.style.display = 'none';
             const panel = document.getElementById('onlinePanel');

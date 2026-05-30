@@ -96,6 +96,25 @@
             font-size: 0.9rem;
         }
 
+        #connectedBadge {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            background: rgba(46, 204, 113, 0.12);
+            border: 1.5px solid rgba(46, 204, 113, 0.45);
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1e824c;
+            user-select: none;
+            transition: background 0.2s, transform 0.15s;
+            align-self: flex-start;
+        }
+        #connectedBadge:hover { background: rgba(46, 204, 113, 0.22); transform: scale(1.03); }
+        #toggleArrow { font-size: 0.72rem; opacity: 0.65; transition: transform 0.2s; }
+
         .online-actions {
             display: flex;
             gap: 10px;
@@ -302,6 +321,7 @@
         .choice-btn.green-choice { background-color: var(--green-piece); }
         .choice-btn.yellow-choice { background-color: var(--yellow-piece); color: #3e2723; }
     </style>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
 
@@ -323,19 +343,34 @@
             </div>
         </div>
 
-        <div class="online-container" id="onlineContainer">
-            <div class="online-panel">
-                <input type="text" id="roomNameInput" placeholder="Room Name">
-                <input type="password" id="roomPassInput" placeholder="Password">
-                <div class="online-actions">
-                    <button class="btn action-btn" onclick="handleOnlineAction('createRoom')">Create</button>
-                    <button class="btn action-btn" onclick="handleOnlineAction('joinRoom')">Join</button>
+        <div class="online-container" id="onlineContainer" style="flex-direction:column;align-items:flex-start;">
+            <div id="connectedBadge" onclick="toggleOnlinePanel()">
+                <span>🟢 Connected</span>
+                <span id="toggleArrow">▾</span>
+            </div>
+            <div class="online-panel" id="onlinePanel">
+                <div id="peerIdDisplay" style="display:none;flex-direction:column;gap:6px;">
+                    <div style="font-size:0.78rem;color:#888;text-align:center;">Your Peer ID — share this with your friend</div>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <input type="text" id="myPeerIdBox" readonly style="flex:1;cursor:text;" placeholder="Generating...">
+                        <button class="btn action-btn" onclick="copyPeerId()" title="Copy ID" style="padding:8px 10px;font-size:1rem;">📋</button>
+                    </div>
                 </div>
+                <input type="text" id="friendPeerIdInput" placeholder="Enter Friend's Peer ID">
+                <div class="online-actions">
+                    <button class="btn action-btn" onclick="connectToPeer()">Connect 🔗</button>
+                </div>
+                <div id="connectionStatus" style="font-size:0.78rem;text-align:center;color:#888;min-height:1.2em;"></div>
             </div>
         </div>
     </div>
 
     <div id="status">Green's Turn</div>
+    <div id="scoreBoard" style="display:none;align-items:center;gap:18px;font-size:0.95rem;font-weight:700;padding:5px 18px;background:rgba(0,0,0,0.05);border-radius:20px;margin-bottom:10px;letter-spacing:0.5px;">
+        <span style="color:var(--green-hover);">🟢 Green: <span id="scoreGreenVal">0</span></span>
+        <span style="opacity:0.25;font-size:1.1rem;">|</span>
+        <span style="color:var(--yellow-hover);">🟡 Yellow: <span id="scoreYellowVal">0</span></span>
+    </div>
 
     <div class="board-container">
         <svg class="board-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -354,7 +389,10 @@
     <div class="modal" id="winModal">
         <div class="modal-content">
             <h2 id="winMessage">Green Wins!</h2>
-            <button class="reset-btn" id="modalResetBtn" onclick="resetGame()">Play Again</button>
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;">
+                <button class="reset-btn" id="modalRestartBtn" onclick="restartGame()">Restart</button>
+                <button class="reset-btn" id="modalCloseBtn" onclick="closeWinModal()" style="background:rgba(90,74,66,0.15);color:var(--text-color);">Close</button>
+            </div>
         </div>
     </div>
 
@@ -369,7 +407,7 @@
     </div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyB6rsC3t2OHJ8B5zzOuPapWCVq7sDPh9Fl_r5rUvR9J4lEHnufB6cdH3sOkj3inicF/exec";
+
 
         const adjacencyMap = {
             0: [1, 3, 4], 1: [0, 2, 4], 2: [1, 4, 5],
@@ -391,12 +429,14 @@
         let isAiThinking = false;
         let humanPlayerColor = 'green';
 
-        // Online Infrastructure Flags
-        let playerId = 'player_' + Math.random().toString(36).substr(2, 9);
-        let currentRoomName = null;
-        let currentRoomPass = null;
-        let myOnlineRole = null; 
-        let pollInterval = null;
+        // Score tracking
+        let scoreGreen = 0;
+        let scoreYellow = 0;
+
+        // Online (PeerJS) State
+        let peer = null;
+        let conn = null;
+        let myOnlineRole = null; // 'green' (creator) or 'yellow' (joiner)
         let p2Joined = false;
 
         const nodeElements = document.querySelectorAll('.node');
@@ -419,7 +459,8 @@
             diffContainer.classList.toggle('show', mode === 'vsCpu');
             onlineContainer.classList.toggle('show', mode === 'vsOnline');
             
-            document.getElementById('modalResetBtn').style.display = (mode === 'vsOnline') ? 'none' : 'block';
+            document.getElementById('modalRestartBtn').style.display = 'block';
+            document.getElementById('modalCloseBtn').style.display = (mode === 'vsOnline') ? 'block' : 'none';
             initGame();
         }
 
@@ -440,9 +481,10 @@
             isAiThinking = false;
             
             if (gameMode === 'vsOnline') {
-                statusDisplay.textContent = "Create or Join a Room to Start!";
+                statusDisplay.textContent = "Initializing peer connection...";
                 statusDisplay.style.color = "var(--text-color)";
                 renderBoard();
+                initPeer();
             } else if (gameMode === 'vsCpu') {
                 choiceModal.classList.add('show');
             } else {
@@ -545,8 +587,11 @@
             renderBoard();
             
             if (checkWin(gameState, currentTurn)) {
-                handleEndGame(currentTurn);
-                if (gameMode === 'vsOnline') pushOnlineState();
+                // Local player made the winning move — increment score
+                if (currentTurn === 'green') scoreGreen++; else scoreYellow++;
+                updateScoreDisplay();
+                handleEndGame(currentTurn, false); // false = already incremented
+                if (gameMode === 'vsOnline') pushOnlineState(true); // send with scores
             } else {
                 currentTurn = currentTurn === 'green' ? 'yellow' : 'green';
                 updateStatusUI();
@@ -572,9 +617,56 @@
             });
         }
 
-        function handleEndGame(winner) {
-            winMessage.textContent = `${winner.charAt(0).toUpperCase() + winner.slice(1)} Wins!`;
+        function handleEndGame(winner, shouldIncrement = true) {
+            if (shouldIncrement) {
+                if (winner === 'green') scoreGreen++; else scoreYellow++;
+                updateScoreDisplay();
+                if (gameMode === 'vsOnline' && conn && conn.open) {
+                    conn.send({ type: 'scoreUpdate', scoreGreen, scoreYellow });
+                }
+            }
+            winMessage.textContent = `${winner.charAt(0).toUpperCase() + winner.slice(1)} Wins! 🎉`;
             winModal.classList.add('show');
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('scoreGreenVal').textContent = scoreGreen;
+            document.getElementById('scoreYellowVal').textContent = scoreYellow;
+            document.getElementById('scoreBoard').style.display = 'flex';
+        }
+
+        function restartGame() {
+            winModal.classList.remove('show');
+            if (gameMode === 'vsOnline') {
+                resetBoardOnly();
+                if (conn && conn.open) conn.send({ type: 'restart', scoreGreen, scoreYellow });
+            } else {
+                scoreGreen = 0; scoreYellow = 0; // reset scores for local modes
+                document.getElementById('scoreBoard').style.display = 'none';
+                resetGame();
+            }
+        }
+
+        function closeWinModal() {
+            winModal.classList.remove('show');
+            if (gameMode === 'vsOnline') {
+                // Notify opponent to leave too, then disconnect after short delay
+                if (conn && conn.open) conn.send({ type: 'leave' });
+                scoreGreen = 0;
+                scoreYellow = 0;
+                document.getElementById('scoreBoard').style.display = 'none';
+                setTimeout(() => setGameMode('vsLocal'), 300);
+            }
+        }
+
+        function resetBoardOnly() {
+            gameState = Array(9).fill(null);
+            gameState[0] = 'yellow'; gameState[1] = 'yellow'; gameState[2] = 'yellow';
+            gameState[6] = 'green';  gameState[7] = 'green';  gameState[8] = 'green';
+            currentTurn = 'green';
+            selectedNodeIndex = null;
+            updateStatusUI();
+            renderBoard();
         }
 
         function makeCpuMove() {
@@ -673,102 +765,145 @@
             }
         }
 
-        // --- Database Communication Pipeline Engines ---
-        function handleOnlineAction(action) {
-            const roomName = document.getElementById('roomNameInput').value.trim();
-            const roomPass = document.getElementById('roomPassInput').value.trim();
-            
-            if (!roomName || !roomPass) {
-                alert("Please enter both Room Name and Password.");
-                return;
-            }
+        // --- PeerJS Online Multiplayer Engine ---
+        function initPeer() {
+            if (peer && !peer.destroyed) peer.destroy();
+            peer = new Peer();
 
-            statusDisplay.textContent = "Connecting to database sheet...";
-            
-            gameState = Array(9).fill(null);
-            gameState[0] = 'yellow'; gameState[1] = 'yellow'; gameState[2] = 'yellow'; 
-            gameState[6] = 'green'; gameState[7] = 'green'; gameState[8] = 'green';
-            renderBoard();
-            
-            fetch(SCRIPT_URL, {
-                method: "POST",
-                mode: "no-cors", 
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action, roomName, password: roomPass, playerId })
-            })
-            .then(() => {
-                currentRoomName = roomName;
-                currentRoomPass = roomPass;
-                myOnlineRole = (action === 'createRoom') ? 'green' : 'yellow';
-                p2Joined = (action === 'joinRoom');
-                
-                updateStatusUI();
-                cleanOnlinePolling();
-                pollInterval = setInterval(syncWithOnlineDatabase, 1500); 
-            })
-            .catch(err => {
-                alert("Database Connection Error!");
-                initGame();
+            peer.on('open', (id) => {
+                const display = document.getElementById('peerIdDisplay');
+                display.style.display = 'flex';
+                document.getElementById('myPeerIdBox').value = id;
+                document.getElementById('connectionStatus').textContent = 'Share your ID with your friend and wait for them to connect.';
+                myOnlineRole = 'green'; // creator is always Green
+                statusDisplay.textContent = "Your ID is ready — waiting for opponent...";
             });
+
+            peer.on('connection', (connection) => {
+                conn = connection;
+                myOnlineRole = 'green';
+                p2Joined = true;
+                setupConnection(true); // true = isCreator
+            });
+
+            peer.on('error', (err) => {
+                document.getElementById('connectionStatus').textContent = '⚠️ Error: ' + err.type;
+            });
+        }
+
+        function connectToPeer() {
+            const friendId = document.getElementById('friendPeerIdInput').value.trim();
+            if (!friendId) { alert("Please enter your friend's Peer ID."); return; }
+            if (!peer || peer.destroyed) { alert("Not ready. Please re-select Online mode."); return; }
+            document.getElementById('connectionStatus').textContent = 'Connecting...';
+            conn = peer.connect(friendId, { reliable: true });
+            myOnlineRole = 'yellow'; // joiner is always Yellow
+            setupConnection(false); // false = not creator
+        }
+
+        function setupConnection(isCreator) {
+            conn.on('open', () => {
+                p2Joined = true;
+                document.getElementById('connectionStatus').textContent = '✅ Connected!';
+                if (isCreator) {
+                    // Creator (Green) sends the initial board state
+                    conn.send({ type: 'init', gameState: gameState, currentTurn: currentTurn });
+                }
+                updateStatusUI();
+                // Collapse panel to badge after short delay
+                setTimeout(() => {
+                    document.getElementById('onlinePanel').style.display = 'none';
+                    document.getElementById('connectedBadge').style.display = 'flex';
+                    document.getElementById('toggleArrow').textContent = '▾';
+                }, 900);
+            });
+            conn.on('data', (data) => {
+                if (data.type === 'init' || data.type === 'move') {
+                    gameState = data.gameState;
+                    currentTurn = data.currentTurn;
+                    // Opponent sent updated scores (they made winning move)
+                    if (data.scoreGreen !== undefined) {
+                        scoreGreen = data.scoreGreen;
+                        scoreYellow = data.scoreYellow;
+                        updateScoreDisplay();
+                    }
+                    selectedNodeIndex = null;
+                    renderBoard();
+                    updateStatusUI();
+                    // Opponent made winning move — show modal but don't re-increment
+                    if (checkWin(gameState, 'green')) handleEndGame('green', false);
+                    if (checkWin(gameState, 'yellow')) handleEndGame('yellow', false);
+                }
+                if (data.type === 'scoreUpdate') {
+                    scoreGreen = data.scoreGreen;
+                    scoreYellow = data.scoreYellow;
+                    updateScoreDisplay();
+                }
+                if (data.type === 'restart') {
+                    scoreGreen = data.scoreGreen;
+                    scoreYellow = data.scoreYellow;
+                    updateScoreDisplay();
+                    winModal.classList.remove('show');
+                    resetBoardOnly();
+                }
+                if (data.type === 'leave') {
+                    // Other player closed the game — we leave too
+                    scoreGreen = 0;
+                    scoreYellow = 0;
+                    document.getElementById('scoreBoard').style.display = 'none';
+                    winModal.classList.remove('show');
+                    setGameMode('vsLocal');
+                }
+            });
+            conn.on('close', () => {
+                p2Joined = false;
+                statusDisplay.textContent = "Opponent disconnected.";
+                statusDisplay.style.color = "var(--text-color)";
+            });
+        }
+
+        function copyPeerId() {
+            const id = document.getElementById('myPeerIdBox').value;
+            if (!id) return;
+            navigator.clipboard.writeText(id)
+                .then(() => { document.getElementById('connectionStatus').textContent = '📋 ID copied! Share it with your friend.'; })
+                .catch(() => { document.getElementById('myPeerIdBox').select(); document.execCommand('copy'); });
+        }
+
+        function toggleOnlinePanel() {
+            const panel = document.getElementById('onlinePanel');
+            const arrow = document.getElementById('toggleArrow');
+            const isHidden = panel.style.display === 'none';
+            panel.style.display = isHidden ? '' : 'none';
+            arrow.textContent = isHidden ? '▴' : '▾';
         }
 
         function cleanOnlinePolling() {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
-            currentRoomName = null;
-            currentRoomPass = null;
+            if (conn) { try { conn.close(); } catch(e){} conn = null; }
+            if (peer && !peer.destroyed) { try { peer.destroy(); } catch(e){} }
+            peer = null;
             myOnlineRole = null;
             p2Joined = false;
+            const d = document.getElementById('peerIdDisplay');
+            if (d) d.style.display = 'none';
+            const s = document.getElementById('connectionStatus');
+            if (s) s.textContent = '';
+            const b = document.getElementById('myPeerIdBox');
+            if (b) b.value = '';
+            const f = document.getElementById('friendPeerIdInput');
+            if (f) f.value = '';
+            const badge = document.getElementById('connectedBadge');
+            if (badge) badge.style.display = 'none';
+            const panel = document.getElementById('onlinePanel');
+            if (panel) panel.style.display = '';
         }
 
-        function pushOnlineState() {
-            if (!currentRoomName) return;
-            const payload = {
-                action: "updateBoard",
-                roomName: currentRoomName,
-                password: currentRoomPass,
-                gameState: JSON.stringify(gameState),
-                currentTurn: currentTurn
-            };
-            fetch(SCRIPT_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-        }
-
-        function syncWithOnlineDatabase() {
-            if (!currentRoomName) return;
-            
-            fetch(`${SCRIPT_URL}?action=getRoom&roomName=${encodeURIComponent(currentRoomName)}&password=${encodeURIComponent(currentRoomPass)}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) return;
-                
-                if (!p2Joined && data.playerYellow) {
-                    p2Joined = true;
-                    updateStatusUI();
-                }
-
-                if (data.gameState) {
-                    const incomingState = JSON.parse(data.gameState);
-                    if (JSON.stringify(incomingState) !== JSON.stringify(gameState)) {
-                        gameState = incomingState;
-                        renderBoard();
-                    }
-                }
-
-                if (data.currentTurn && data.currentTurn !== currentTurn) {
-                    currentTurn = data.currentTurn;
-                    updateStatusUI();
-                }
-
-                if (checkWin(gameState, 'green')) handleEndGame('green');
-                if (checkWin(gameState, 'yellow')) handleEndGame('yellow');
-            });
+        function pushOnlineState(withScores = false) {
+            if (conn && conn.open) {
+                const payload = { type: 'move', gameState: gameState, currentTurn: currentTurn };
+                if (withScores) { payload.scoreGreen = scoreGreen; payload.scoreYellow = scoreYellow; }
+                conn.send(payload);
+            }
         }
 
         window.onload = () => {
